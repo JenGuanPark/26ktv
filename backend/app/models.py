@@ -1,6 +1,13 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime
+from sqlalchemy import Column, Integer, String, Float, DateTime, JSON
 from datetime import datetime
 from .database import Base
+
+class BotState(Base):
+    __tablename__ = "bot_states"
+    
+    user_id = Column(String, primary_key=True, index=True)
+    data = Column(JSON, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 class Transaction(Base):
     __tablename__ = "transactions"

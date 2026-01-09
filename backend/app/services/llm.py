@@ -1,19 +1,24 @@
 import os
 import json
 import re
+import requests
 from openai import OpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
 
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
-BASE_URL = "https://api.deepseek.com"
+# Text Model (DeepSeek or OpenAI)
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY") or os.getenv("OPENAI_API_KEY")
+BASE_URL = "https://api.deepseek.com" if os.getenv("DEEPSEEK_API_KEY") else None
+
+# OCR.space Configuration
+OCR_SPACE_API_KEY = os.getenv("OCR_SPACE_KEY", "K87916702088957")
 
 client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url=BASE_URL)
 
 SYSTEM_PROMPT = """
 You are a smart expense tracking assistant for a family living in both Mainland China and Hong Kong.
-Your task is to extract expense details from the user's natural language input or OCR text from receipts.
+Your task is to extract expense details from the user's natural language input.
 
 The user maintains two separate ledgers:
 1. **CNY (RMB)**: Default for expenses in Mainland China or when no currency is specified.
@@ -32,60 +37,18 @@ Please extract the following fields in JSON format:
    - If the item/location implies Mainland China (e.g., "微信支付", "支付宝", "淘宝", "美团", "滴滴", Simplified Chinese receipts), default to **CNY**.
 3. **Default**: If no currency is specified and no context is found, default to **CNY**.
 
-### Receipt/OCR Handling:
-- The input might be raw text extracted from an image (OCR). It may contain noise.
-- Look for the **Total Amount** (largest number usually associated with "Total", "Amount", "合计", "实付").
-- Ignore dates, times, and transaction IDs unless they help identify the context.
-- Summarize the main item purchased.
-
 ### Examples:
 - "买菜 200" -> {"amount": 200, "currency": "CNY", "category": "餐饮", "item": "买菜"}
 - "Taxi 50" -> {"amount": 50, "currency": "CNY", "category": "交通", "item": "出租车"} (Ambiguous, default to CNY)
 - "打车去旺角 80" -> {"amount": 80, "currency": "HKD", "category": "交通", "item": "打车去旺角"}
 - "7-11买水 10块" -> {"amount": 10, "currency": "CNY", "category": "餐饮", "item": "7-11买水"}
 - "午饭 500 港币" -> {"amount": 500, "currency": "HKD", "category": "餐饮", "item": "午饭"}
-- (OCR Text) "STARBUCKS COFFEE HK ... Total HKD 45.00" -> {"amount": 45.00, "currency": "HKD", "category": "餐饮", "item": "星巴克咖啡"}
 
 Rules:
 - If input is not an expense, return {"is_expense": false}.
 - Return JSON only.
 - ALWAYS return 'item' and 'category' in Simplified Chinese.
 """
-
-def _run_ocr(image_path: str) -> str:
-    import subprocess
-    script_path = os.path.join(os.path.dirname(__file__), "ocr.swift")
-    try:
-        result = subprocess.run(
-            ["swift", script_path, image_path],
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=20
-        )
-        return result.stdout.strip()
-    except subprocess.TimeoutExpired:
-        print("OCR Error: timeout")
-        return ""
-    except subprocess.CalledProcessError as e:
-        print(f"OCR Error: {e.stderr}")
-        return ""
-
-def parse_expense_image(image_path: str):
-    # 1. Run OCR
-    ocr_text = _run_ocr(image_path)
-    if not ocr_text:
-        return {"is_expense": False, "error": "OCR failed to extract text"}
-    
-    print(f"OCR Result:\n{ocr_text}\n---")
-    # 2. First try deterministic heuristics tailored for receipts/bank transfers
-    heur = _parse_receipt_heuristics(ocr_text)
-    if heur:
-        return heur
-    # 3. Fallback to LLM parsing on cleaned text (avoid misleading time like 10:38)
-    cleaned = _clean_ocr_for_llm(ocr_text)
-    prompt_text = f"以下为小票/转账OCR文本，请提取金额、币种、类别与项目（中文）：\n{cleaned}"
-    return parse_expense_text(prompt_text)
 
 def _simple_parse(text: str):
     lower = text.lower()
@@ -110,155 +73,6 @@ def _simple_parse(text: str):
     item = text.strip()
     return {"is_expense": True, "amount": amount, "currency": currency, "category": category, "item": item}
 
-def _parse_receipt_heuristics(ocr_text: str):
-    from datetime import datetime
-    lines = [l.strip() for l in ocr_text.splitlines() if l.strip()]
-    text_lower = ocr_text.lower()
-    currency = None
-    if any(k in text_lower for k in ["hk$", "hkd", "港币", "港元", "港幣"]):
-        currency = "HKD"
-    elif any(k in text_lower for k in ["cny", "rmb", "人民币", "¥", "￥", "元"]):
-        currency = "CNY"
-    keywords_total = ["total", "amount", "合计", "總計", "实付", "實付", "总额", "金額", "金額合計"]
-    currency_tokens = ["HK$", "HKD", "CNY", "RMB", "¥", "￥"]
-    candidates = []
-    num_pattern = re.compile(r"[-]?\s*(\d{1,3}(?:,\d{3})*(?:\.\d+)?|\d+\.\d{2})")
-    for ln in lines:
-        has_currency = any(tok in ln for tok in currency_tokens)
-        has_total_kw = any(kw.lower() in ln.lower() for kw in keywords_total)
-        is_negative_line = ln.strip().startswith("-")
-        has_cny_word = ("元" in ln) or ("人民币" in ln) or ("人民幣" in ln)
-        if has_currency or has_total_kw or is_negative_line or has_cny_word:
-            for m in num_pattern.finditer(ln):
-                val_str = m.group(1)
-                try:
-                    val = float(val_str.replace(",", ""))
-                    candidates.append({
-                        "amount": val,
-                        "negative": ln.strip().startswith("-") or "-" in ln,
-                        "currency": "HKD" if ("HK$" in ln or "HKD" in ln) else ("CNY" if ("CNY" in ln or "RMB" in ln or "¥" in ln or "￥" in ln or "元" in ln or "人民币" in ln) else currency),
-                        "line": ln
-                    })
-                except:
-                    pass
-    chosen = None
-    # Prefer monetary-looking decimals first
-    decimals = [c for c in candidates if re.search(r"\d+\.\d{2}", c["line"])]
-    neg_candidates = [c for c in decimals if c["negative"]] or [c for c in candidates if c["negative"]]
-    if neg_candidates:
-        chosen = max(neg_candidates, key=lambda c: c["amount"])
-    elif decimals:
-        total_candidates = [c for c in decimals if any(kw.lower() in c["line"].lower() for kw in keywords_total)]
-        chosen = max(total_candidates or decimals, key=lambda c: c["amount"])
-    elif candidates:
-        # Prefer 'Total' lines first
-        total_candidates = [c for c in candidates if any(kw.lower() in c["line"].lower() for kw in keywords_total)]
-        chosen = max(total_candidates or candidates, key=lambda c: c["amount"])
-    if not chosen:
-        return None
-    amount = chosen["amount"]
-    cur = chosen["currency"] or currency or "CNY"
-    # Parse date/time
-    date_match = re.search(r"(20\d{2}[/-]\d{2}[/-]\d{2})", ocr_text)
-    time_match = re.search(r"(\d{2}:\d{2}:\d{2})", ocr_text)
-    dt_obj = None
-    if date_match and time_match:
-        dt_str = f"{date_match.group(1)} {time_match.group(1)}"
-        for fmt in ["%Y/%m/%d %H:%M:%S", "%Y-%m-%d %H:%M:%S"]:
-            try:
-                dt_obj = datetime.strptime(dt_str, fmt)
-                break
-            except:
-                continue
-    elif date_match:
-        for fmt in ["%Y/%m/%d", "%Y-%m-%d"]:
-            try:
-                dt_obj = datetime.strptime(date_match.group(1), fmt)
-                break
-            except:
-                continue
-    # Item/category summary
-    item = "消费"
-    category = "其他"
-    bank_transfer_kw = ["转账", "轉賬", "轉账", "转數快", "轉數快", "FPS", "Faster Payment", "轉給", "转给"]
-    payee_markers = ["收款人", "付款人", "Payee", "Beneficiary", "To"]
-    merchant_hint = ["COFFEE", "STORE", "SHOP", "MART", "MARKET", "LIMITED", "7-11", "STARBUCKS", "WATSONS", "PARKnSHOP", "MCDONALD", "KFC"]
-    if any(kw.lower() in text_lower for kw in [k.lower() for k in bank_transfer_kw]):
-        name = None
-        # 1) same line after transfer keywords
-        for ln in lines:
-            lnl = ln.lower()
-            if any(kw.lower() in lnl for kw in bank_transfer_kw):
-                # Chinese "转给XXX" pattern
-                m_cn = re.search(r"(?:转给|轉給)\s*([^\s]{1,20})", ln)
-                if m_cn:
-                    cand = m_cn.group(1)
-                    cand = re.sub(r"[#*]+", "", cand).strip()
-                    if cand:
-                        name = cand
-                        break
-                # English-like token fallback
-                blocks = re.findall(r"[A-Za-z#][A-Za-z# ]{2,}", ln)
-                if blocks:
-                    cand = blocks[-1].strip()
-                    cand = re.sub(r"\s{2,}", " ", cand)
-                    if len(cand) >= 2 and not re.search(r"\d", cand):
-                        name = cand
-                        break
-        # 2) payee markers
-        if not name:
-            for ln in lines:
-                if any(pk.lower() in ln.lower() for pk in payee_markers):
-                    # take trailing text as name
-                    parts = re.split(r"[:：]", ln)
-                    tail = parts[-1].strip()
-                    tail = re.sub(r"\\s{2,}", " ", tail)
-                    if tail and not re.search(r"\\d", tail):
-                        name = tail
-                        break
-        # 3) fallback: pick a likely name-like uppercase line without digits
-        if not name:
-            for ln in lines:
-                if len(ln) <= 2: 
-                    continue
-                if re.search(r"\\d", ln): 
-                    continue
-                if re.fullmatch(r"[A-Za-z# ]{3,}", ln):
-                    name = re.sub(r"\\s{2,}", " ", ln).strip()
-                    break
-        category = "转账"
-        item = f"转账给 {name}" if name else "转账"
-    else:
-        # merchant detection for receipts
-        merch = None
-        for ln in lines[:6]:  # top lines are more likely the merchant/header
-            if any(h in ln.upper() for h in merchant_hint):
-                if not re.search(r"\\d", ln):
-                    merch = ln.strip()
-                    break
-        # 移除宽泛的英文大写回退，避免误识别噪声为商户
-        if merch:
-            item = f"在 {merch} 消费"
-    # Return
-    result = {"is_expense": True, "amount": amount, "currency": cur, "category": category, "item": item}
-    if dt_obj:
-        result["created_at"] = dt_obj
-    return result
-
-def _clean_ocr_for_llm(ocr_text: str):
-    lines = []
-    for ln in ocr_text.splitlines():
-        s = ln.strip()
-        if not s:
-            continue
-        # remove pure times and IDs
-        if re.fullmatch(r"\d{1,2}:\d{2}(:\d{2})?", s):
-            continue
-        if re.fullmatch(r"[A-Za-z0-9\\|-]{8,}", s.replace(" ", "")):
-            continue
-        lines.append(s)
-    return "\n".join(lines)
-
 def parse_expense_text(text: str):
     if not DEEPSEEK_API_KEY:
         fallback = _simple_parse(text)
@@ -268,7 +82,7 @@ def parse_expense_text(text: str):
 
     try:
         response = client.chat.completions.create(
-            model="deepseek-chat",
+            model="deepseek-chat" if BASE_URL else "gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": text}
@@ -278,30 +92,93 @@ def parse_expense_text(text: str):
         
         content = response.choices[0].message.content
         parsed = json.loads(content)
+        
+        # Validation and fallback logic
         if not isinstance(parsed, dict):
             fallback = _simple_parse(text)
-            if fallback:
-                return fallback
-            return {"is_expense": False}
-        if not parsed.get("is_expense"):
+            return fallback if fallback else {"is_expense": False}
+            
+        if not parsed.get("is_expense", True): # Default true if not specified
+             return {"is_expense": False}
+             
+        # Ensure essential fields
+        if "amount" not in parsed:
             fallback = _simple_parse(text)
-            if fallback:
-                return fallback
-        cur = parsed.get("currency")
-        if cur not in ("CNY", "HKD"):
-            fallback = _simple_parse(text)
-            if fallback:
-                parsed["currency"] = fallback["currency"]
-        amt = parsed.get("amount")
-        if amt is None:
-            fallback = _simple_parse(text)
-            if fallback:
-                parsed["amount"] = fallback["amount"]
-        if "item" not in parsed or not parsed["item"]:
-            parsed["item"] = text.strip()
+            if fallback: parsed["amount"] = fallback["amount"]
+        
+        if "currency" not in parsed:
+            parsed["currency"] = "CNY"
+            
+        if "item" not in parsed:
+            parsed["item"] = text[:20]
+
+        parsed["is_expense"] = True
         return parsed
     except Exception as e:
+        print(f"LLM Error: {e}")
         fallback = _simple_parse(text)
         if fallback:
             return fallback
         return {"is_expense": False, "error": str(e)}
+
+def _run_ocr_space(image_path: str) -> str:
+    """
+    Use OCR.space Free API to extract text from image.
+    """
+    try:
+        url = "https://api.ocr.space/parse/image"
+        with open(image_path, 'rb') as f:
+            payload = {
+                'apikey': OCR_SPACE_API_KEY,
+                'language': 'chs', # Chinese Simplified (covers English numbers too)
+                'isOverlayRequired': False,
+                'OCREngine': 2, # Engine 2 is better for numbers/receipts
+                'scale': True
+            }
+            files = {'file': f}
+            # OCR.space free tier can be slow, set timeout generously
+            r = requests.post(url, files=files, data=payload, timeout=30)
+            r.raise_for_status()
+            result = r.json()
+            
+            if result.get('IsErroredOnProcessing'):
+                err_msg = result.get('ErrorMessage')
+                print(f"OCR API Error: {err_msg}")
+                # Fallback to Engine 1 if Engine 2 fails
+                if payload['OCREngine'] == 2:
+                    print("Retrying with OCR Engine 1...")
+                    f.seek(0)
+                    payload['OCREngine'] = 1
+                    r = requests.post(url, files=files, data=payload, timeout=30)
+                    result = r.json()
+                    if result.get('IsErroredOnProcessing'):
+                        return ""
+                else:
+                    return ""
+
+            parsed_results = result.get('ParsedResults')
+            if not parsed_results:
+                return ""
+            
+            extracted_text = parsed_results[0].get('ParsedText', "")
+            return extracted_text.strip()
+
+    except Exception as e:
+        print(f"OCR Request Exception: {e}")
+        return ""
+
+def parse_expense_image(image_path: str):
+    """
+    1. Upload image to OCR.space to get text.
+    2. Pass text to parse_expense_text (DeepSeek).
+    """
+    print(f"Starting OCR for {image_path}...")
+    ocr_text = _run_ocr_space(image_path)
+    
+    if not ocr_text:
+        return {"is_expense": False, "error": "Could not extract text from image (OCR failed)."}
+    
+    print(f"OCR Result: {ocr_text[:100]}...") # Log first 100 chars
+    
+    # Pass the OCR text to the existing text parser
+    return parse_expense_text(ocr_text)

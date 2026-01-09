@@ -9,7 +9,41 @@ from .llm import parse_expense_text, parse_expense_image
 
 # 获取 Token
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-PENDING = {}
+
+def set_state(user_id: str, data: dict):
+    db: Session = SessionLocal()
+    try:
+        state = db.query(models.BotState).filter(models.BotState.user_id == user_id).first()
+        if not state:
+            state = models.BotState(user_id=user_id, data=data)
+            db.add(state)
+        else:
+            state.data = data
+        db.commit()
+    except Exception as e:
+        print(f"Error setting state: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+def get_state(user_id: str) -> dict | None:
+    db: Session = SessionLocal()
+    try:
+        state = db.query(models.BotState).filter(models.BotState.user_id == user_id).first()
+        if state:
+            data = state.data
+            # Optional: auto-clear state after read, or keep it until explicitly cleared
+            # Here we follow PENDING.pop() pattern: read and clear
+            db.delete(state)
+            db.commit()
+            return data
+        return None
+    except Exception as e:
+        print(f"Error getting state: {e}")
+        db.rollback()
+        return None
+    finally:
+        db.close()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(
@@ -44,7 +78,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
 
-            PENDING[user_id] = {
+            set_state(user_id, {
                 "user_id": user_id,
                 "user_name": user_name,
                 "amount": result["amount"],
@@ -53,7 +87,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "item": result.get("item") or "消费",
                 "raw_text": "[Image Receipt]",
                 "created_at": result.get("created_at")
-            }
+            })
             prompt = (
                 f"预览：{result['amount']} {result['currency']}，{result['category']}\n"
                 f"请回复本次消费的项目（例如：转账给XX、在XX购物）"
@@ -85,9 +119,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
     user_id = str(update.effective_user.id)
     user_name = update.effective_user.first_name
+    
     # If waiting for this user's item input, take this message as item and save
-    if user_id in PENDING:
-        data = PENDING.pop(user_id)
+    pending_data = get_state(user_id)
+    if pending_data:
+        data = pending_data
         item_text = user_text.strip()
         db: Session = SessionLocal()
         try:
@@ -134,7 +170,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text="🤔 这看起来不像是一笔账单。请再说具体点？"
             )
             return
-        PENDING[user_id] = {
+        set_state(user_id, {
             "user_id": user_id,
             "user_name": user_name,
             "amount": result["amount"],
@@ -142,7 +178,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "category": result["category"],
             "item": result.get("item") or "消费",
             "raw_text": user_text
-        }
+        })
         prompt = (
             f"预览：{result['amount']} {result['currency']}，{result['category']}\n"
             f"请回复本次消费的项目（例如：转账给XX、在XX购物）"
@@ -239,10 +275,11 @@ async def edit_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_item_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
-    if user_id not in PENDING:
+    pending_data = get_state(user_id)
+    if not pending_data:
         return
     item_text = update.message.text.strip()
-    data = PENDING.pop(user_id)
+    data = pending_data
     db: Session = SessionLocal()
     try:
         new_tx = models.Transaction(
@@ -285,7 +322,7 @@ def create_bot_app():
     application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
     
     start_handler = CommandHandler('start', start)
-    msg_handler = MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message)
+    msg_handler = MessageHandler(filters.TEXT & (~filters.COMMAND) & (~filters.REPLY), handle_message)
     photo_handler = MessageHandler(filters.PHOTO, handle_photo)
     reply_handler = MessageHandler(filters.TEXT & filters.REPLY, handle_item_reply)
     undo_handler = CommandHandler('undo', undo)
@@ -294,6 +331,7 @@ def create_bot_app():
     
     application.add_handler(start_handler)
     application.add_handler(photo_handler)
+    application.add_handler(msg_handler)
     application.add_handler(reply_handler)
     application.add_handler(undo_handler)
     application.add_handler(delete_handler)
