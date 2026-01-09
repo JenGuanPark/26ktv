@@ -8,15 +8,21 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Configuration
-# 优先使用 OPENAI_API_KEY，如果没有则尝试使用 DEEPSEEK_API_KEY
-API_KEY = os.getenv("OPENAI_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
-BASE_URL = os.getenv("OPENAI_BASE_URL") # 允许自定义 Base URL (例如中转地址)
+# 优先检查 DASHSCOPE_API_KEY (阿里云)，其次是 OPENAI_API_KEY
+API_KEY = os.getenv("DASHSCOPE_API_KEY") or os.getenv("OPENAI_API_KEY")
 
-# 如果是 DeepSeek Key (通常以 sk- 开头但 DeepSeek 官方的不支持 vision)，
-# 用户需要提供 OpenAI Key 才能用图片功能。
-# 这里我们默认配置为 GPT-4o，这是目前处理账单的最佳模型。
-VISION_MODEL = "gpt-4o" 
-TEXT_MODEL = "gpt-4o-mini" # 平时纯文本可以用便宜的 mini
+# 自动判断 Base URL 和 Model
+if os.getenv("DASHSCOPE_API_KEY"):
+    # 阿里云配置
+    BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    VISION_MODEL = "qwen-vl-max" # 通义千问视觉增强版
+    TEXT_MODEL = "qwen-plus"     # 通义千问增强版
+    print("Using DashScope (Aliyun) models...")
+else:
+    # OpenAI 默认配置
+    BASE_URL = os.getenv("OPENAI_BASE_URL") 
+    VISION_MODEL = "gpt-4o" 
+    TEXT_MODEL = "gpt-4o-mini"
 
 client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
 
