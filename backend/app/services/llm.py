@@ -1,24 +1,28 @@
 import os
 import json
+import base64
 import re
-import requests
 from openai import OpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Text Model (DeepSeek or OpenAI)
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY") or os.getenv("OPENAI_API_KEY")
-BASE_URL = "https://api.deepseek.com" if os.getenv("DEEPSEEK_API_KEY") else None
+# Configuration
+# 优先使用 OPENAI_API_KEY，如果没有则尝试使用 DEEPSEEK_API_KEY
+API_KEY = os.getenv("OPENAI_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
+BASE_URL = os.getenv("OPENAI_BASE_URL") # 允许自定义 Base URL (例如中转地址)
 
-# OCR.space Configuration
-OCR_SPACE_API_KEY = os.getenv("OCR_SPACE_KEY", "K87916702088957")
+# 如果是 DeepSeek Key (通常以 sk- 开头但 DeepSeek 官方的不支持 vision)，
+# 用户需要提供 OpenAI Key 才能用图片功能。
+# 这里我们默认配置为 GPT-4o，这是目前处理账单的最佳模型。
+VISION_MODEL = "gpt-4o" 
+TEXT_MODEL = "gpt-4o-mini" # 平时纯文本可以用便宜的 mini
 
-client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url=BASE_URL)
+client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
 
 SYSTEM_PROMPT = """
 You are a smart expense tracking assistant for a family living in both Mainland China and Hong Kong.
-Your task is to extract expense details from the user's natural language input.
+Your task is to extract expense details from the user's natural language input or receipt images.
 
 The user maintains two separate ledgers:
 1. **CNY (RMB)**: Default for expenses in Mainland China or when no currency is specified.
@@ -51,6 +55,7 @@ Rules:
 """
 
 def _simple_parse(text: str):
+    """Fallback regex parser for simple text inputs"""
     lower = text.lower()
     currency = "CNY"
     if any(tok in lower for tok in ["hkd", "港币", "港元", "港幣", "港紙", "蚊"]):
@@ -74,7 +79,7 @@ def _simple_parse(text: str):
     return {"is_expense": True, "amount": amount, "currency": currency, "category": category, "item": item}
 
 def parse_expense_text(text: str):
-    if not DEEPSEEK_API_KEY:
+    if not API_KEY:
         fallback = _simple_parse(text)
         if fallback:
             return fallback
@@ -82,7 +87,7 @@ def parse_expense_text(text: str):
 
     try:
         response = client.chat.completions.create(
-            model="deepseek-chat" if BASE_URL else "gpt-3.5-turbo",
+            model=TEXT_MODEL,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": text}
@@ -115,70 +120,72 @@ def parse_expense_text(text: str):
         parsed["is_expense"] = True
         return parsed
     except Exception as e:
-        print(f"LLM Error: {e}")
+        print(f"LLM Text Error: {e}")
         fallback = _simple_parse(text)
         if fallback:
             return fallback
         return {"is_expense": False, "error": str(e)}
 
-def _run_ocr_space(image_path: str) -> str:
-    """
-    Use OCR.space Free API to extract text from image.
-    """
-    try:
-        url = "https://api.ocr.space/parse/image"
-        with open(image_path, 'rb') as f:
-            payload = {
-                'apikey': OCR_SPACE_API_KEY,
-                'language': 'chs', # Chinese Simplified (covers English numbers too)
-                'isOverlayRequired': False,
-                'OCREngine': 2, # Engine 2 is better for numbers/receipts
-                'scale': True
-            }
-            files = {'file': f}
-            # OCR.space free tier can be slow, set timeout generously
-            r = requests.post(url, files=files, data=payload, timeout=30)
-            r.raise_for_status()
-            result = r.json()
-            
-            if result.get('IsErroredOnProcessing'):
-                err_msg = result.get('ErrorMessage')
-                print(f"OCR API Error: {err_msg}")
-                # Fallback to Engine 1 if Engine 2 fails
-                if payload['OCREngine'] == 2:
-                    print("Retrying with OCR Engine 1...")
-                    f.seek(0)
-                    payload['OCREngine'] = 1
-                    r = requests.post(url, files=files, data=payload, timeout=30)
-                    result = r.json()
-                    if result.get('IsErroredOnProcessing'):
-                        return ""
-                else:
-                    return ""
-
-            parsed_results = result.get('ParsedResults')
-            if not parsed_results:
-                return ""
-            
-            extracted_text = parsed_results[0].get('ParsedText', "")
-            return extracted_text.strip()
-
-    except Exception as e:
-        print(f"OCR Request Exception: {e}")
-        return ""
+def encode_image(image_path):
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode('utf-8')
 
 def parse_expense_image(image_path: str):
     """
-    1. Upload image to OCR.space to get text.
-    2. Pass text to parse_expense_text (DeepSeek).
+    Use GPT-4o Vision to directly understand the receipt image.
     """
-    print(f"Starting OCR for {image_path}...")
-    ocr_text = _run_ocr_space(image_path)
+    if not API_KEY:
+        return {"is_expense": False, "error": "No API Key configured"}
+
+    print(f"Analyzing image with {VISION_MODEL}: {image_path}")
     
-    if not ocr_text:
-        return {"is_expense": False, "error": "Could not extract text from image (OCR failed)."}
-    
-    print(f"OCR Result: {ocr_text[:100]}...") # Log first 100 chars
-    
-    # Pass the OCR text to the existing text parser
-    return parse_expense_text(ocr_text)
+    try:
+        base64_image = encode_image(image_path)
+        
+        response = client.chat.completions.create(
+            model=VISION_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": SYSTEM_PROMPT
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "这是我的消费小票，请识别其中的金额、币种、类别和商品名称。"},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{base64_image}",
+                                "detail": "high"
+                            }
+                        }
+                    ]
+                }
+            ],
+            response_format={ "type": "json_object" },
+            max_tokens=300
+        )
+
+        content = response.choices[0].message.content
+        parsed = json.loads(content)
+        
+        if not parsed.get("is_expense", True):
+            return {"is_expense": False, "error": "AI recognized this is not an expense receipt."}
+            
+        # Basic validation
+        if "amount" not in parsed:
+             return {"is_expense": False, "error": "Could not find amount in image."}
+             
+        if "currency" not in parsed:
+            parsed["currency"] = "CNY" # Default
+            
+        if "item" not in parsed:
+            parsed["item"] = "未知商品"
+
+        parsed["is_expense"] = True
+        return parsed
+
+    except Exception as e:
+        print(f"LLM Vision Error: {e}")
+        return {"is_expense": False, "error": f"Vision API Error: {str(e)}"}
