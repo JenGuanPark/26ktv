@@ -39,6 +39,7 @@ const CATEGORY_COLORS = {
 function App() {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [activeCurrency, setActiveCurrency] = useState('CNY');
   const [selectedMonth, setSelectedMonth] = useState(dayjs());
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
@@ -73,14 +74,31 @@ function App() {
 
   const fetchData = async () => {
     try {
+      setError(null);
       const res = await axios.get(`${API_URL}/transactions/`);
       setTransactions(res.data || []);
     } catch (error) {
       console.error("Failed to fetch data", error);
+      setError(error.message || 'Failed to fetch data');
     } finally {
       setLoading(false);
     }
   };
+
+  if (loading && transactions.length === 0) return (
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', flexDirection: 'column', gap: 20 }}>
+      <Spin size="large" />
+      <div>Connecting to Backend... (First load may take 1 min)</div>
+    </div>
+  );
+
+  if (error && transactions.length === 0) return (
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', flexDirection: 'column', gap: 20 }}>
+      <Tag color="red" style={{ fontSize: 16, padding: 10 }}>Error: {error}</Tag>
+      <div>Backend URL: {API_URL}</div>
+      <div onClick={() => window.location.reload()} style={{ cursor: 'pointer', color: '#1677ff' }}>Click to Retry</div>
+    </div>
+  );
 
   // 1. 先按币种过滤
   const currencyData = transactions.filter(t => t.currency === activeCurrency);
