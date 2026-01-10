@@ -74,12 +74,23 @@ function App() {
 
   const fetchData = async () => {
     try {
+      console.log("Starting fetch from:", API_URL);
       setError(null);
-      const res = await axios.get(`${API_URL}/transactions/`);
+      
+      // Add timeout to force error if backend hangs
+      const res = await axios.get(`${API_URL}/transactions/`, { timeout: 15000 });
+      
+      console.log("Fetch success:", res.data);
       setTransactions(res.data || []);
     } catch (error) {
       console.error("Failed to fetch data", error);
-      setError(error.message || 'Failed to fetch data');
+      let msg = error.message;
+      if (error.code === 'ECONNABORTED') {
+        msg = "Connection timed out. Backend is sleeping or unreachable.";
+      } else if (error.response) {
+        msg = `Server Error: ${error.response.status} ${JSON.stringify(error.response.data)}`;
+      }
+      setError(msg);
     } finally {
       setLoading(false);
     }
