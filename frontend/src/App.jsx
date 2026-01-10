@@ -10,7 +10,7 @@ dayjs.locale('zh-cn');
 
 const { Header, Content } = Layout;
 
-const API_URL = import.meta?.env?.VITE_API_URL || 'http://localhost:8000';
+const API_URL = 'https://two6ktv.onrender.com';
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#AF19FF', '#FF1919'];
 const CATEGORY_COLORS = {
