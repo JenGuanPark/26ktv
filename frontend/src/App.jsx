@@ -208,7 +208,7 @@ function App() {
   return (
     <Layout className="min-h-screen bg-gray-50">
       <Header className={headerClass}>
-        <h1 className="text-xl font-bold text-gray-800 m-0">📊 家庭双币记账本</h1>
+        <h1 className="text-xl font-bold text-gray-800 m-0">📊 家庭双币记账本 (修复版)</h1>
         <div className={isMobile ? "flex items-start gap-2" : "flex items-center gap-2"}>
           <span className="text-gray-500">选择月份:</span>
           <DatePicker 
