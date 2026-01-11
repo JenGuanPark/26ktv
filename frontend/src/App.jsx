@@ -10,7 +10,8 @@ dayjs.locale('zh-cn');
 
 const { Header, Content } = Layout;
 
-const API_URL = 'https://two6ktv.onrender.com';
+// Use environment variable for API URL, fallback to default (Render backend)
+const API_URL = import.meta.env.VITE_API_URL || 'https://two6ktv.onrender.com';
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#AF19FF', '#FF1919'];
 const CATEGORY_COLORS = {
