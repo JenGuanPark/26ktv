@@ -220,21 +220,25 @@ function App() {
   ];
 
   const headerClass = isMobile
-    ? "bg-white shadow-sm flex flex-col gap-2 px-4 sticky top-0 z-10"
+    ? "bg-white shadow-sm flex items-center justify-between px-4 py-3 sticky top-0 z-10"
     : "bg-white shadow-sm flex items-center justify-between px-6 sticky top-0 z-10";
 
   return (
     <Layout className="min-h-screen bg-gray-50">
-      <Header className={headerClass}>
-        <h1 className="text-xl font-bold text-gray-800 m-0">📊 家庭双币记账本</h1>
-        <div className={isMobile ? "flex items-start gap-2" : "flex items-center gap-2"}>
-          <span className="text-gray-500">选择月份:</span>
+      <Header className={headerClass} style={{ height: 'auto', lineHeight: 'normal' }}>
+        <h1 className={`${isMobile ? 'text-lg' : 'text-xl'} font-bold text-gray-800 m-0`}>
+          📊 {isMobile ? '家庭记账' : '家庭双币记账本'}
+        </h1>
+        <div className="flex items-center gap-2">
+          {!isMobile && <span className="text-gray-500">选择月份:</span>}
           <DatePicker 
             picker="month" 
             value={selectedMonth} 
             onChange={setSelectedMonth}
             allowClear={false}
-            format="YYYY年 MM月"
+            format={isMobile ? "YYYY-MM" : "YYYY年 MM月"}
+            style={{ width: isMobile ? 110 : 140 }}
+            inputReadOnly
           />
         </div>
       </Header>
@@ -253,6 +257,19 @@ function App() {
             size="large"
             destroyInactiveTabPane={true} // 确保切换Tab时彻底重绘
           />
+        )}
+
+        {/* Reset Data Button */}
+        {!loading && (
+          <div className="mt-12 mb-6 text-center">
+            <div className="text-gray-400 text-sm mb-2">数据管理</div>
+            <button 
+              onClick={handleReset}
+              className="px-4 py-2 text-red-500 border border-red-200 rounded hover:bg-red-50 hover:border-red-300 transition-colors text-sm"
+            >
+              🗑️ 清空所有账单数据
+            </button>
+          </div>
         )}
       </Content>
     </Layout>
