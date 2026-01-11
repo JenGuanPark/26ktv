@@ -96,6 +96,24 @@ function App() {
     }
   };
 
+  const handleReset = async () => {
+    if (!window.confirm("⚠️ 警告：确定要删除所有账单数据吗？\n\n此操作不可恢复！")) return;
+    
+    // Double confirmation
+    if (!window.confirm("再次确认：真的要清空所有数据吗？")) return;
+
+    try {
+      setLoading(true);
+      await axios.delete(`${API_URL}/transactions/reset`);
+      alert("✅ 所有数据已成功清空");
+      fetchData();
+    } catch (error) {
+      console.error("Reset failed", error);
+      alert("❌ 删除失败: " + (error.response?.data?.detail || error.message));
+      setLoading(false);
+    }
+  };
+
   if (loading && transactions.length === 0) return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', flexDirection: 'column', gap: 20 }}>
       <Spin size="large" />

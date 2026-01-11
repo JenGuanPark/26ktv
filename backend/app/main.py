@@ -67,3 +67,13 @@ def create_transaction(transaction: schemas.TransactionCreate, db: Session = Dep
     db.commit()
     db.refresh(db_transaction)
     return db_transaction
+
+@app.delete("/transactions/reset")
+def reset_transactions(db: Session = Depends(get_db)):
+    try:
+        num_deleted = db.query(models.Transaction).delete()
+        db.commit()
+        return {"message": f"Deleted {num_deleted} transactions"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
