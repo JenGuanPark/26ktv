@@ -274,8 +274,8 @@ function App() {
           />
         )}
 
-        {/* Reset Data Button */}
-        {!loading && (
+        {/* Reset Data Button - Disabled by user request */}
+        {/* {!loading && (
           <div className="mt-12 mb-6 text-center">
             <div className="text-gray-400 text-sm mb-2">数据管理</div>
             <button 
@@ -285,7 +285,7 @@ function App() {
               🗑️ 清空所有账单数据
             </button>
           </div>
-        )}
+        )} */}
       </Content>
     </Layout>
   );
