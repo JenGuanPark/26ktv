@@ -33,6 +33,16 @@ const CATEGORY_COLORS = {
     '医疗': '#73d13d',
     '转账': '#d4380d',
     '其他': '#595959',
+  },
+  USDT: {
+    '餐饮': '#1677ff',
+    '交通': '#13c2c2',
+    '购物': '#52c41a',
+    '居住': '#722ed1',
+    '娱乐': '#eb2f96',
+    '医疗': '#fa8c16',
+    '转账': '#f5222d',
+    '其他': '#595959',
   }
 };
 
@@ -217,6 +227,11 @@ function App() {
       label: '🇭🇰 港币 (HKD)',
       children: renderContent(currentData, totalAmount, pieData, memberData, columns, activeCurrency, isMobile),
     },
+    {
+      key: 'USDT',
+      label: '🇺🇸 泰达币 (USDT)',
+      children: renderContent(currentData, totalAmount, pieData, memberData, columns, activeCurrency, isMobile),
+    },
   ];
 
   const headerClass = isMobile
@@ -277,7 +292,7 @@ function App() {
 }
 
 function renderContent(data, totalAmount, pieData, memberData, columns, currency, isMobile) {
-  const currencySymbol = currency === 'CNY' ? '¥' : 'HK$';
+  const currencySymbol = currency === 'CNY' ? '¥' : (currency === 'HKD' ? 'HK$' : '₮');
   const colorMap = CATEGORY_COLORS[currency] || CATEGORY_COLORS.CNY;
 
   return (

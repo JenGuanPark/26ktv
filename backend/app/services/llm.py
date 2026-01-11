@@ -33,17 +33,22 @@ Your task is to extract expense details from the user's natural language input o
 The user maintains two separate ledgers:
 1. **CNY (RMB)**: Default for expenses in Mainland China or when no currency is specified.
 2. **HKD**: For expenses in Hong Kong.
+3. **USDT**: For cryptocurrency expenses (Tether).
 
 Please extract the following fields in JSON format:
 - amount: (number) The numerical value.
-- currency: (string) "CNY" or "HKD".
+- currency: (string) "CNY", "HKD" or "USDT".
 - category: (string) A short category name in Simplified Chinese (e.g., "餐饮", "交通", "购物", "居住", "娱乐", "医疗", "其他").
 - item: (string) A brief description in Simplified Chinese. If the original text is in English or other languages, TRANSLATE it to Simplified Chinese.
 
 ### Currency Inference Rules:
-1. **Explicit Currency**: If the user mentions "港币", "HKD", "HK$", "港纸", set currency to "HKD". If "人民币", "RMB", "CNY", "元", set to "CNY".
+1. **Explicit Currency**: 
+   - If "港币", "HKD", "HK$", "港纸", set currency to "HKD". 
+   - If "USDT", "Tether", "泰达币", "U", "u", set currency to "USDT".
+   - If "人民币", "RMB", "CNY", "元", set to "CNY".
 2. **Contextual Inference**:
    - If the item/location implies Hong Kong (e.g., "MTR", "旺角", "茶餐厅", "八达通", "7-11 HK", English receipts from HK stores), default to **HKD**.
+   - If the item implies crypto or blockchain (e.g. "Gas fee", "TRX", "ETH", "Binance", "Okx"), default to **USDT**.
    - If the item/location implies Mainland China (e.g., "微信支付", "支付宝", "淘宝", "美团", "滴滴", Simplified Chinese receipts), default to **CNY**.
 3. **Default**: If no currency is specified and no context is found, default to **CNY**.
 
@@ -53,6 +58,8 @@ Please extract the following fields in JSON format:
 - "打车去旺角 80" -> {"amount": 80, "currency": "HKD", "category": "交通", "item": "打车去旺角"}
 - "7-11买水 10块" -> {"amount": 10, "currency": "CNY", "category": "餐饮", "item": "7-11买水"}
 - "午饭 500 港币" -> {"amount": 500, "currency": "HKD", "category": "餐饮", "item": "午饭"}
+- "Gas fee 10 U" -> {"amount": 10, "currency": "USDT", "category": "其他", "item": "Gas fee"}
+- "买U 1000" -> {"amount": 1000, "currency": "USDT", "category": "其他", "item": "买U"}
 
 Rules:
 - If input is not an expense, return {"is_expense": false}.
@@ -66,6 +73,8 @@ def _simple_parse(text: str):
     currency = "CNY"
     if any(tok in lower for tok in ["hkd", "港币", "港元", "港幣", "港紙", "蚊"]):
         currency = "HKD"
+    if any(tok in lower for tok in ["usdt", "tether", "泰达币"]):
+        currency = "USDT"
     if any(tok in lower for tok in ["cny", "人民币", "rmb"]):
         currency = "CNY"
     if ("块" in text) or ("元" in text):
