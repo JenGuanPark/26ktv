@@ -242,7 +242,7 @@ function App() {
     <Layout className="min-h-screen bg-gray-50">
       <Header className={headerClass} style={{ height: 'auto', lineHeight: 'normal' }}>
         <h1 className={`${isMobile ? 'text-lg' : 'text-xl'} font-bold text-gray-800 m-0`}>
-          📊 {isMobile ? '家庭记账' : '家庭双币记账本'}
+          🎤 26KTV记账
         </h1>
         <div className="flex items-center gap-2">
           {!isMobile && <span className="text-gray-500">选择月份:</span>}
