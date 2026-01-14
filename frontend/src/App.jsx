@@ -243,17 +243,17 @@ function App() {
     {
       key: 'CNY',
       label: '🇨🇳 人民币 (CNY)',
-      children: renderContent(currentData, totalAmount, pieData, memberData, columns, activeCurrency, isMobile),
+      children: renderContent(currentData, totalAmount, pieData, memberData, columns, activeCurrency, isMobile, yearlyTotalUSD, currentYear),
     },
     {
       key: 'HKD',
       label: '🇭🇰 港币 (HKD)',
-      children: renderContent(currentData, totalAmount, pieData, memberData, columns, activeCurrency, isMobile),
+      children: renderContent(currentData, totalAmount, pieData, memberData, columns, activeCurrency, isMobile, yearlyTotalUSD, currentYear),
     },
     {
       key: 'USDT',
       label: '🇺🇸 泰达币 (USDT)',
-      children: renderContent(currentData, totalAmount, pieData, memberData, columns, activeCurrency, isMobile),
+      children: renderContent(currentData, totalAmount, pieData, memberData, columns, activeCurrency, isMobile, yearlyTotalUSD, currentYear),
     },
   ];
 
@@ -281,22 +281,6 @@ function App() {
         </div>
       </Header>
       <Content className="p-6 max-w-7xl mx-auto w-full">
-        {!loading && (
-          <div className="mb-4">
-            <Card className="bg-white border border-gray-100 shadow-sm" bodyStyle={isMobile ? { padding: '12px 16px' } : {}}>
-              <Statistic
-                title={`${currentYear} 年度总支出 (USD 折算)`}
-                value={yearlyTotalUSD}
-                precision={2}
-                prefix="$"
-                valueStyle={{ color: '#000000d9', fontWeight: 'bold' }}
-              />
-              <div className="text-gray-400 text-xs mt-2">
-                基于 CNY/HKD/USDT 汇总
-              </div>
-            </Card>
-          </div>
-        )}
         {loading && transactions.length === 0 ? (
           <div className="flex justify-center items-center h-64">
             <Spin size="large" />
@@ -330,7 +314,7 @@ function App() {
   );
 }
 
-function renderContent(data, totalAmount, pieData, memberData, columns, currency, isMobile) {
+function renderContent(data, totalAmount, pieData, memberData, columns, currency, isMobile, yearlyTotalUSD, currentYear) {
   const currencySymbol = currency === 'CNY' ? '¥' : (currency === 'HKD' ? 'HK$' : '₮');
   const colorMap = CATEGORY_COLORS[currency] || CATEGORY_COLORS.CNY;
 
@@ -338,7 +322,7 @@ function renderContent(data, totalAmount, pieData, memberData, columns, currency
     <div className={isMobile ? "space-y-4" : "space-y-6"}>
       {/* 顶部统计卡片 */}
       <Row gutter={[16, 16]}>
-        <Col span={24} md={8}>
+        <Col span={24} md={12}>
           <Card hoverable className={isMobile ? "h-full flex flex-col justify-center bg-blue-50 border-blue-100" : "h-full flex flex-col justify-center bg-blue-50 border-blue-100"} bodyStyle={isMobile ? { padding: '12px 16px' } : {}}>
             <Statistic 
               title="本月总支出" 
@@ -352,9 +336,57 @@ function renderContent(data, totalAmount, pieData, memberData, columns, currency
             </div>
           </Card>
         </Col>
-        
-        {/* 成员支出排行 */}
-        <Col span={24} md={16}>
+        <Col span={24} md={12}>
+          <Card hoverable className="h-full flex flex-col justify-center bg-white border border-gray-100" bodyStyle={isMobile ? { padding: '12px 16px' } : {}}>
+            <Statistic
+              title={`${currentYear} 年度总支出 (USD 折算)`}
+              value={yearlyTotalUSD}
+              precision={2}
+              prefix="$"
+              valueStyle={{ color: '#000000d9', fontWeight: 'bold' }}
+            />
+            <div className="text-gray-400 text-xs mt-2">
+              基于 CNY/HKD/USDT 汇总
+            </div>
+          </Card>
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]}>
+        <Col span={24} md={12}>
+          <Card title="📊 支出类别分布">
+            <div className={isMobile ? "h-56" : "h-72"}>
+              {pieData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={pieData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={isMobile ? 50 : 60}
+                      outerRadius={isMobile ? 70 : 80}
+                      paddingAngle={5}
+                      dataKey="value"
+                    >
+                      {pieData.map((entry, index) => {
+                        const fill = colorMap[entry.name] || COLORS[index % COLORS.length];
+                        return <Cell key={`cell-${index}`} fill={fill} />;
+                      })}
+                    </Pie>
+                    <Tooltip formatter={(value) => `${currencySymbol} ${value.toFixed(2)}`} />
+                    <Legend verticalAlign="bottom" height={36}/>
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full text-gray-400">
+                  暂无数据
+                </div>
+              )}
+            </div>
+          </Card>
+        </Col>
+
+        <Col span={24} md={12}>
           <Card title="👨‍👩‍👧‍👦 成员支出排行" className="h-full" bodyStyle={isMobile ? { padding: '8px 16px' } : { padding: '10px 24px' }}>
             {memberData.length > 0 ? (
               <List
@@ -385,60 +417,6 @@ function renderContent(data, totalAmount, pieData, memberData, columns, currency
               <div className="text-gray-400 py-8 text-center">本月暂无数据</div>
             )}
           </Card>
-        </Col>
-      </Row>
-
-      <Row gutter={[16, 16]}>
-        {/* 分类饼图 */}
-        <Col span={24} md={12}>
-           <Card title="📊 支出类别分布">
-             <div className={isMobile ? "h-56" : "h-72"}>
-               {pieData.length > 0 ? (
-                 <ResponsiveContainer width="100%" height="100%">
-                   <PieChart>
-                     <Pie
-                       data={pieData}
-                       cx="50%"
-                       cy="50%"
-                       innerRadius={isMobile ? 50 : 60}
-                       outerRadius={isMobile ? 70 : 80}
-                       paddingAngle={5}
-                       dataKey="value"
-                     >
-                       {pieData.map((entry, index) => {
-                         const fill = colorMap[entry.name] || COLORS[index % COLORS.length];
-                         return <Cell key={`cell-${index}`} fill={fill} />;
-                       })}
-                     </Pie>
-                     <Tooltip formatter={(value) => `${currencySymbol} ${value.toFixed(2)}`} />
-                     <Legend verticalAlign="bottom" height={36}/>
-                   </PieChart>
-                 </ResponsiveContainer>
-               ) : (
-                 <div className="flex items-center justify-center h-full text-gray-400">
-                   暂无数据
-                 </div>
-               )}
-             </div>
-           </Card>
-        </Col>
-
-        {/* 最近支出记录 */}
-        <Col span={24} md={12}>
-           <Card title="📅 最近支出记录" className="h-full">
-             <Table 
-                dataSource={data.slice(0, 5)} 
-                columns={columns}
-                rowKey="id" 
-                pagination={false}
-                size="small"
-                sticky
-                scroll={{ x: 'max-content' }}
-             />
-             <div className="mt-4 text-center">
-                <span className="text-gray-400 text-sm">显示最近5笔，查看下方完整列表</span>
-             </div>
-           </Card>
         </Col>
       </Row>
 
