@@ -46,6 +46,12 @@ const CATEGORY_COLORS = {
   }
 };
 
+const FX_RATES = {
+  CNY: 1 / 7.2,
+  HKD: 1 / 7.8,
+  USDT: 1,
+};
+
 function App() {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -146,6 +152,23 @@ function App() {
   const currentData = currencyData.filter(t => 
     dayjs(t.created_at).isSame(selectedMonth, 'month')
   );
+  
+  const currentYear = selectedMonth.year();
+
+  const yearData = transactions.filter(t =>
+    dayjs(t.created_at).year() === currentYear
+  );
+
+  const yearlyTotalsByCurrency = yearData.reduce((acc, t) => {
+    const cur = t.currency;
+    acc[cur] = (acc[cur] || 0) + t.amount;
+    return acc;
+  }, {});
+
+  const yearlyTotalUSD = Object.keys(yearlyTotalsByCurrency).reduce((sum, cur) => {
+    const rate = FX_RATES[cur] || 0;
+    return sum + yearlyTotalsByCurrency[cur] * rate;
+  }, 0);
   
   // Calculate total
   const totalAmount = currentData.reduce((sum, t) => sum + t.amount, 0);
@@ -258,6 +281,22 @@ function App() {
         </div>
       </Header>
       <Content className="p-6 max-w-7xl mx-auto w-full">
+        {!loading && (
+          <div className="mb-4">
+            <Card className="bg-white border border-gray-100 shadow-sm" bodyStyle={isMobile ? { padding: '12px 16px' } : {}}>
+              <Statistic
+                title={`${currentYear} 年度总支出 (USD 折算)`}
+                value={yearlyTotalUSD}
+                precision={2}
+                prefix="$"
+                valueStyle={{ color: '#000000d9', fontWeight: 'bold' }}
+              />
+              <div className="text-gray-400 text-xs mt-2">
+                基于 CNY/HKD/USDT 汇总
+              </div>
+            </Card>
+          </div>
+        )}
         {loading && transactions.length === 0 ? (
           <div className="flex justify-center items-center h-64">
             <Spin size="large" />
