@@ -1,13 +1,10 @@
-from fastapi import FastAPI, Depends, HTTPException, File, UploadFile
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from typing import List
 from contextlib import asynccontextmanager
 import asyncio
 import os
-import shutil
-import uuid
 
 from . import models, schemas, database
 from .database import engine, get_db
@@ -15,11 +12,6 @@ from .services.bot import create_bot_app
 
 # Create tables
 models.Base.metadata.create_all(bind=engine)
-
-# Ensure uploads directory exists
-UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
-if not os.path.exists(UPLOAD_DIR):
-    os.makedirs(UPLOAD_DIR)
 
 bot_app = None
 
@@ -51,9 +43,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-# Mount uploads directory
-app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
-
 # CORS
 app.add_middleware(
     CORSMiddleware,
@@ -79,28 +68,6 @@ def create_transaction(transaction: schemas.TransactionCreate, db: Session = Dep
     db.commit()
     db.refresh(db_transaction)
     return db_transaction
-
-@app.post("/transactions/{transaction_id}/upload-receipt")
-async def upload_receipt(transaction_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
-    transaction = db.query(models.Transaction).filter(models.Transaction.id == transaction_id).first()
-    if not transaction:
-        raise HTTPException(status_code=404, detail="Transaction not found")
-    
-    # Generate unique filename
-    file_extension = os.path.splitext(file.filename)[1]
-    filename = f"{uuid.uuid4()}{file_extension}"
-    file_path = os.path.join(UPLOAD_DIR, filename)
-    
-    # Save file
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-        
-    # Update transaction
-    transaction.receipt_image_path = file_path
-    db.commit()
-    db.refresh(transaction)
-    
-    return {"filename": filename, "file_path": file_path}
 
 @app.delete("/transactions/reset")
 def reset_transactions(db: Session = Depends(get_db)):

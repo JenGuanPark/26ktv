@@ -22,5 +22,4 @@ class Transaction(Base):
     item = Column(String)                     # Description of the item
     
     raw_text = Column(String)                 # Original message text
-    receipt_image_path = Column(String, nullable=True) # Path to receipt image
     created_at = Column(DateTime, default=datetime.now)
