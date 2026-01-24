@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { Layout, Card, Table, Tabs, Statistic, Row, Col, Tag, Spin, DatePicker, List, Avatar, Image, Upload, Button, message } from 'antd';
+import { Layout, Card, Table, Tabs, Statistic, Row, Col, Tag, Spin, DatePicker, List, Avatar } from 'antd';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { UploadOutlined, FileImageOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import 'dayjs/locale/zh-cn';
 
@@ -237,39 +236,6 @@ function App() {
       key: 'user_name',
       render: (text) => <Tag color="orange">{text || 'Unknown'}</Tag>,
       width: 100,
-    },
-    {
-      title: '票据',
-      key: 'receipt',
-      width: 100,
-      render: (_, record) => (
-        <div className="flex items-center justify-center">
-          {record.receipt_image_path ? (
-            <Image
-              width={40}
-              src={`${API_URL}/${record.receipt_image_path}`}
-              alt="receipt"
-              fallback="https://via.placeholder.com/40?text=Err"
-            />
-          ) : (
-             <Upload
-              name="file"
-              action={`${API_URL}/transactions/${record.id}/upload-receipt`}
-              showUploadList={false}
-              onChange={(info) => {
-                if (info.file.status === 'done') {
-                  message.success('上传成功');
-                  fetchData(); // Refresh list to show image
-                } else if (info.file.status === 'error') {
-                  message.error('上传失败');
-                }
-              }}
-            >
-              <Button icon={<UploadOutlined />} size="small" type="text" />
-            </Upload>
-          )}
-        </div>
-      ),
     },
   ];
 
