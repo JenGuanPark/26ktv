@@ -55,58 +55,72 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     user_name = update.effective_user.first_name
     
+    # Check if this is a photo
+    if not update.message.photo:
+        return
+
     # Get the largest photo
     photo = update.message.photo[-1]
     
-    status_msg = await context.bot.send_message(chat_id=update.effective_chat.id, text="📸 正在识别图片...")
-    
+    # Send processing message
+    status_msg = await context.bot.send_message(
+        chat_id=update.effective_chat.id, 
+        text="�️ 收到图片，正在识别..."
+    )
+
     try:
-        # Download photo
+        # Save to uploads directory permanently
         file = await context.bot.get_file(photo.file_id)
-        file_path = f"temp_{photo.file_id}.jpg"
+        
+        # Use env var for upload dir
+        upload_dir = os.getenv("UPLOAD_DIR", "uploads")
+        os.makedirs(upload_dir, exist_ok=True)
+        
+        # Use file_id as filename to avoid collisions
+        file_path = os.path.join(upload_dir, f"{photo.file_id}.jpg")
+        
         await file.download_to_drive(file_path)
         
-        try:
-            # Parse image (OCR + LLM)
-            result = await asyncio.to_thread(parse_expense_image, os.path.abspath(file_path))
-            
-            if not result.get("is_expense"):
-                await context.bot.edit_message_text(
-                    chat_id=update.effective_chat.id,
-                    message_id=status_msg.message_id,
-                    text=f"🤔 无法识别账单信息。\n错误: {result.get('error', '未知原因')}"
-                )
-                return
-
-            set_state(user_id, {
-                "user_id": user_id,
-                "user_name": user_name,
-                "amount": result["amount"],
-                "currency": result["currency"],
-                "category": result["category"],
-                "item": result.get("item") or "消费",
-                "raw_text": "[Image Receipt]",
-                "created_at": result.get("created_at")
-            })
-            prompt = (
-                f"预览：{result['amount']} {result['currency']}，{result['category']}\n"
-                f"请回复本次消费的项目（例如：转账给XX、在XX购物）"
-            )
+        # Parse image (OCR + LLM)
+        # Pass absolute path for safety, though relative should work
+        result = await asyncio.to_thread(parse_expense_image, os.path.abspath(file_path))
+        
+        if not result.get("is_expense"):
             await context.bot.edit_message_text(
                 chat_id=update.effective_chat.id,
                 message_id=status_msg.message_id,
-                text="图片识别完成，等待填写项目..."
+                text=f"🤔 无法识别为账单。{result.get('error', '')}"
             )
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=prompt,
-                reply_markup=ForceReply(selective=True)
-            )
-                
-        finally:
-            # Clean up temp file
-            if os.path.exists(file_path):
-                os.remove(file_path)
+            # Optional: Delete file if not expense? Keep for now just in case.
+            return
+
+        # Store state
+        set_state(user_id, {
+            "user_id": user_id,
+            "user_name": user_name,
+            "amount": result["amount"],
+            "currency": result["currency"],
+            "category": result["category"],
+            "item": result.get("item") or "消费",
+            "raw_text": "[Image Receipt]",
+            "receipt_image_path": file_path, # Save path to DB later
+            "created_at": result.get("created_at")
+        })
+        
+        prompt = (
+            f"预览：{result['amount']} {result['currency']}，{result['category']}\n"
+            f"请回复本次消费的项目（例如：转账给XX、在XX购物）"
+        )
+        await context.bot.edit_message_text(
+            chat_id=update.effective_chat.id,
+            message_id=status_msg.message_id,
+            text="图片识别完成，等待填写项目..."
+        )
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=prompt,
+            reply_markup=ForceReply(selective=True)
+        )
                 
     except Exception as e:
         await context.bot.edit_message_text(
@@ -135,6 +149,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 category=data["category"],
                 item=item_text or data.get("item") or "消费",
                 raw_text=data["raw_text"],
+                receipt_image_path=data.get("receipt_image_path"),
                 created_at=data.get("created_at")
             )
             db.add(new_tx)
@@ -290,6 +305,7 @@ async def handle_item_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
             category=data["category"],
             item=item_text,
             raw_text=data["raw_text"],
+            receipt_image_path=data.get("receipt_image_path"),
             created_at=data.get("created_at")
         )
         db.add(new_tx)

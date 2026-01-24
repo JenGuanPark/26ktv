@@ -8,6 +8,7 @@ class TransactionBase(BaseModel):
     category: str
     item: str
     raw_text: Optional[str] = None
+    receipt_image_path: Optional[str] = None
     user_id: str
     user_name: str
 

@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: family-ledger
+    runtime: python
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: uvicorn backend.app.main:app --host 0.0.0.0 --port 10000
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.5
+      - key: UPLOAD_DIR
+        value: /var/data/uploads
+    disk:
+      name: ledger-data
+      mountPath: /var/data
+      sizeGB: 1
