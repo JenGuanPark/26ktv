@@ -77,7 +77,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         os.makedirs(upload_dir, exist_ok=True)
         
         # Use file_id as filename to avoid collisions
-        file_path = os.path.join(upload_dir, f"{photo.file_id}.jpg")
+        filename = f"{photo.file_id}.jpg"
+        file_path = os.path.join(upload_dir, filename)
         
         await file.download_to_drive(file_path)
         
@@ -93,6 +94,10 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             # Optional: Delete file if not expense? Keep for now just in case.
             return
+            
+        # Store relative path for frontend access
+        # The frontend expects "uploads/filename.jpg" to append to API_URL
+        relative_path = f"uploads/{filename}"
 
         # Store state
         set_state(user_id, {
@@ -103,7 +108,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "category": result["category"],
             "item": result.get("item") or "消费",
             "raw_text": "[Image Receipt]",
-            "receipt_image_path": file_path, # Save path to DB later
+            "receipt_image_path": relative_path, 
             "created_at": result.get("created_at")
         })
         

@@ -7,3 +7,9 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.5
+      - key: UPLOAD_DIR
+        value: /var/data/uploads
+    disk:
+      name: ledger-data
+      mountPath: /var/data
+      sizeGB: 1

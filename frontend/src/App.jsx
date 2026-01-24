@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { Layout, Card, Table, Tabs, Statistic, Row, Col, Tag, Spin, DatePicker, List, Avatar } from 'antd';
+import { Layout, Card, Table, Tabs, Statistic, Row, Col, Tag, Spin, DatePicker, List, Avatar, Image, Upload, Button, message } from 'antd';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { UploadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import 'dayjs/locale/zh-cn';
 
@@ -206,21 +207,21 @@ function App() {
       key: 'created_at',
       render: (text) => dayjs(text).format('YYYY-MM-DD HH:mm'),
       sorter: (a, b) => new Date(a.created_at) - new Date(b.created_at),
-      width: 180,
+      width: 150,
     },
     {
       title: '类别',
       dataIndex: 'category',
       key: 'category',
       render: (_, record) => <Tag color="blue">{deriveCategory(record)}</Tag>,
-      width: 100,
+      width: 90,
     },
     {
       title: '项目',
       dataIndex: 'item',
       key: 'item',
       ellipsis: true,
-      width: 240,
+      width: 200,
     },
     {
       title: '金额',
@@ -228,14 +229,53 @@ function App() {
       key: 'amount',
       render: (amount) => <span className="font-bold text-lg">{amount.toFixed(2)}</span>,
       sorter: (a, b) => a.amount - b.amount,
-      width: 120,
+      width: 110,
     },
     {
       title: '记账人',
       dataIndex: 'user_name',
       key: 'user_name',
       render: (text) => <Tag color="orange">{text || 'Unknown'}</Tag>,
+      width: 90,
+    },
+    {
+      title: '票据',
+      key: 'receipt',
       width: 100,
+      render: (_, record) => (
+        <div className="flex items-center justify-center">
+          {record.receipt_image_path ? (
+            <Image
+              width={80}
+              height={80}
+              src={`${API_URL}/${record.receipt_image_path}`}
+              alt="receipt"
+              fallback="https://via.placeholder.com/80?text=Err"
+              style={{ objectFit: 'cover', borderRadius: 4, cursor: 'pointer' }}
+              preview={{
+                maskClassName: 'rounded',
+                mask: '查看',
+              }}
+            />
+          ) : (
+             <Upload
+              name="file"
+              action={`${API_URL}/transactions/${record.id}/upload-receipt`}
+              showUploadList={false}
+              onChange={(info) => {
+                if (info.file.status === 'done') {
+                  message.success('上传成功');
+                  fetchData(); // Refresh list to show image
+                } else if (info.file.status === 'error') {
+                  message.error('上传失败');
+                }
+              }}
+            >
+              <Button icon={<UploadOutlined />} size="small" type="text" title="上传票据" />
+            </Upload>
+          )}
+        </div>
+      ),
     },
   ];
 
