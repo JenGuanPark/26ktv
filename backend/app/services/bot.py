@@ -5,7 +5,7 @@ from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, Messa
 from sqlalchemy.orm import Session
 from ..database import SessionLocal
 from .. import models
-from .llm import parse_expense_text, parse_expense_image
+from .llm import parse_expense_text, parse_expense_image, translate_to_chinese
 
 # 获取 Token
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -139,11 +139,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     user_name = update.effective_user.first_name
     
-    # If waiting for this user's item input, take this message as item and save
     pending_data = get_state(user_id)
     if pending_data:
         data = pending_data
         item_text = user_text.strip()
+        try:
+            translated_item = await asyncio.to_thread(translate_to_chinese, item_text)
+            if translated_item:
+                item_text = translated_item
+        except Exception as e:
+            print(f"Translation failed: {e}")
         db: Session = SessionLocal()
         try:
             new_tx = models.Transaction(
@@ -160,12 +165,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             db.add(new_tx)
             db.commit()
             db.refresh(new_tx)
+            reply_text = (
+                f"✅ 已记录 #{new_tx.id}\n"
+                f"💰 {data['amount']} {data['currency']}\n"
+                f"📂 {data['category']} - {item_text or '消费'}\n\n"
+                f"操作：/undo 撤回最近一条；/delete {new_tx.id} 删除；/edit {new_tx.id} 新项目名"
+            )
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
-                text=(f"✅ 已记录 #{new_tx.id}\n"
-                      f"💰 {data['amount']} {data['currency']}\n"
-                      f"📂 {data['category']} - {item_text or '消费'}\n\n"
-                      f"操作：/undo 撤回最近一条；/delete {new_tx.id} 删除；/edit {new_tx.id} 新项目名"),
+                text=reply_text,
                 parse_mode='Markdown'
             )
             return
@@ -278,6 +286,12 @@ async def edit_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not new_item:
         await context.bot.send_message(chat_id=update.effective_chat.id, text="新项目名不能为空")
         return
+    try:
+        translated_item = await asyncio.to_thread(translate_to_chinese, new_item)
+        if translated_item:
+            new_item = translated_item
+    except Exception as e:
+        print(f"Translation failed: {e}")
     db: Session = SessionLocal()
     try:
         tx = db.query(models.Transaction).filter(models.Transaction.id == tid, models.Transaction.user_id == user_id).first()

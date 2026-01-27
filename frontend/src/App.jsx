@@ -61,6 +61,8 @@ function App() {
   const [selectedMonth, setSelectedMonth] = useState(dayjs());
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
 
+  const toBeijingTime = (value) => dayjs(value).add(8, 'hour');
+
   const deriveCategory = (record) => {
     const base = (record?.category || '').trim();
     if (base && base !== '其他') return base;
@@ -113,24 +115,6 @@ function App() {
     }
   };
 
-  const handleReset = async () => {
-    if (!window.confirm("⚠️ 警告：确定要删除所有账单数据吗？\n\n此操作不可恢复！")) return;
-    
-    // Double confirmation
-    if (!window.confirm("再次确认：真的要清空所有数据吗？")) return;
-
-    try {
-      setLoading(true);
-      await axios.delete(`${API_URL}/transactions/reset`);
-      alert("✅ 所有数据已成功清空");
-      fetchData();
-    } catch (error) {
-      console.error("Reset failed", error);
-      alert("❌ 删除失败: " + (error.response?.data?.detail || error.message));
-      setLoading(false);
-    }
-  };
-
   if (loading && transactions.length === 0) return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', flexDirection: 'column', gap: 20 }}>
       <Spin size="large" />
@@ -151,13 +135,13 @@ function App() {
 
   // 2. 再按月份过滤
   const currentData = currencyData.filter(t => 
-    dayjs(t.created_at).isSame(selectedMonth, 'month')
+    toBeijingTime(t.created_at).isSame(selectedMonth, 'month')
   );
   
   const currentYear = selectedMonth.year();
 
   const yearData = transactions.filter(t =>
-    dayjs(t.created_at).year() === currentYear
+    toBeijingTime(t.created_at).year() === currentYear
   );
 
   const yearlyTotalsByCurrency = yearData.reduce((acc, t) => {
@@ -205,8 +189,8 @@ function App() {
       title: '时间',
       dataIndex: 'created_at',
       key: 'created_at',
-      render: (text) => dayjs(text).format('YYYY-MM-DD HH:mm'),
-      sorter: (a, b) => new Date(a.created_at) - new Date(b.created_at),
+      render: (text) => toBeijingTime(text).format('YYYY-MM-DD HH:mm'),
+      sorter: (a, b) => toBeijingTime(a.created_at).toDate() - toBeijingTime(b.created_at).toDate(),
       width: 150,
     },
     {
