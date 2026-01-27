@@ -82,9 +82,20 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await file.download_to_drive(file_path)
         
-        # Parse image (OCR + LLM)
+        # Parse image (OCR + LLM) with timeout protection
         # Pass absolute path for safety, though relative should work
-        result = await asyncio.to_thread(parse_expense_image, os.path.abspath(file_path))
+        try:
+            result = await asyncio.wait_for(
+                asyncio.to_thread(parse_expense_image, os.path.abspath(file_path)),
+                timeout=45
+            )
+        except asyncio.TimeoutError:
+            await context.bot.edit_message_text(
+                chat_id=update.effective_chat.id,
+                message_id=status_msg.message_id,
+                text="⌛ 图片识别超时，请稍后重试，或直接发送“金额 + 币种 + 简单说明”。"
+            )
+            return
         
         if not result.get("is_expense"):
             await context.bot.edit_message_text(

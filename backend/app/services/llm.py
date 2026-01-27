@@ -20,8 +20,8 @@ if os.getenv("DASHSCOPE_API_KEY"):
     print("Using DashScope (Aliyun) models...")
 else:
     # OpenAI 默认配置
-    BASE_URL = os.getenv("OPENAI_BASE_URL") 
-    VISION_MODEL = "gpt-4o" 
+    BASE_URL = os.getenv("OPENAI_BASE_URL")
+    VISION_MODEL = "gpt-4o-mini"
     TEXT_MODEL = "gpt-4o-mini"
 
 client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
@@ -172,14 +172,14 @@ def parse_expense_image(image_path: str):
                             "type": "image_url",
                             "image_url": {
                                 "url": f"data:image/jpeg;base64,{base64_image}",
-                                "detail": "high"
+                                "detail": "low"
                             }
                         }
                     ]
                 }
             ],
             response_format={ "type": "json_object" },
-            max_tokens=300
+            max_tokens=200
         )
 
         content = response.choices[0].message.content
