@@ -20,8 +20,8 @@ if os.getenv("DASHSCOPE_API_KEY"):
     print("Using DashScope (Aliyun) models...")
 else:
     # OpenAI 默认配置
-    BASE_URL = os.getenv("OPENAI_BASE_URL")
-    VISION_MODEL = "gpt-4o-mini"
+    BASE_URL = os.getenv("OPENAI_BASE_URL") 
+    VISION_MODEL = "gpt-4o" 
     TEXT_MODEL = "gpt-4o-mini"
 
 client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
@@ -65,6 +65,25 @@ Rules:
 - If input is not an expense, return {"is_expense": false}.
 - Return JSON only.
 - ALWAYS return 'item' and 'category' in Simplified Chinese.
+"""
+
+IMAGE_SYSTEM_PROMPT = """
+You are a receipt parser for a family expense tracker.
+Your ONLY job is to read the receipt image and extract minimal information.
+
+Always return JSON with:
+- amount: (number) the total expense amount on this receipt.
+- currency: (string) "CNY", "HKD" or "USDT".
+- category: (string) a short category name in Simplified Chinese, such as:
+  "餐饮", "交通", "购物", "居住", "娱乐", "医疗", "其他".
+
+Rules:
+- Focus on the MAIN payment amount (not discounts, points, etc.).
+- Infer currency from symbols/text (HK$, 港币 -> HKD; ¥, 人民币 -> CNY; USDT, U -> USDT).
+- If you are not sure about currency, use "HKD" for Hong Kong receipts, otherwise default to "CNY".
+- If this is clearly not an expense receipt, return {"is_expense": false}.
+- Do NOT try to translate or guess the item description; the user will type it later.
+- Keep the JSON short and strict, no extra fields.
 """
 
 def _simple_parse(text: str):
@@ -172,14 +191,14 @@ def parse_expense_image(image_path: str):
                             "type": "image_url",
                             "image_url": {
                                 "url": f"data:image/jpeg;base64,{base64_image}",
-                                "detail": "low"
+                                "detail": "high"
                             }
                         }
                     ]
                 }
             ],
             response_format={ "type": "json_object" },
-            max_tokens=200
+            max_tokens=300
         )
 
         content = response.choices[0].message.content
