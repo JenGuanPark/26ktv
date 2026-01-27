@@ -187,20 +187,33 @@ def parse_expense_image(image_path: str):
         
         if not parsed.get("is_expense", True):
             return {"is_expense": False, "error": "AI recognized this is not an expense receipt."}
-            
-        # Basic validation
-        if "amount" not in parsed:
-             return {"is_expense": False, "error": "Could not find amount in image."}
-             
-        if "currency" not in parsed:
-            parsed["currency"] = "CNY" # Default
-            
-        if "item" not in parsed:
-            parsed["item"] = "未知商品"
-
+        
         parsed["is_expense"] = True
         return parsed
-
     except Exception as e:
-        print(f"LLM Vision Error: {e}")
-        return {"is_expense": False, "error": f"Vision API Error: {str(e)}"}
+        print(f"LLM Image Error: {e}")
+        return {"is_expense": False, "error": str(e)}
+
+def translate_to_chinese(text: str) -> str:
+    """
+    Translate text to Simplified Chinese using LLM.
+    """
+    if not API_KEY or not text.strip():
+        return text
+    
+    # If text is very short and looks like numbers, skip
+    if text.replace('.', '', 1).isdigit():
+        return text
+
+    try:
+        response = client.chat.completions.create(
+            model=TEXT_MODEL,
+            messages=[
+                {"role": "system", "content": "You are a helpful translator. Translate the user input into Simplified Chinese. If the input is already Chinese, return it as is. If it's a mix, translate the foreign parts. Return ONLY the translated text without quotes or explanations."},
+                {"role": "user", "content": text}
+            ]
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"Translation Error: {e}")
+        return text

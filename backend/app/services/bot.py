@@ -299,6 +299,15 @@ async def handle_item_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not pending_data:
         return
     item_text = update.message.text.strip()
+    
+    # Translate item to Chinese if needed
+    try:
+        translated_item = await asyncio.to_thread(translate_to_chinese, item_text)
+        if translated_item:
+            item_text = translated_item
+    except Exception as e:
+        print(f"Translation failed: {e}")
+        
     data = pending_data
     db: Session = SessionLocal()
     try:
