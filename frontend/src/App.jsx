@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { Layout, Card, Table, Tabs, Statistic, Row, Col, Tag, Spin, DatePicker, List, Avatar, Image, Upload, Button, message } from 'antd';
+import { Layout, Card, Table, Tabs, Statistic, Row, Col, Tag, Spin, DatePicker, List, Avatar, Image, Upload, Button, message, Dropdown } from 'antd';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { UploadOutlined } from '@ant-design/icons';
+import { UploadOutlined, DownloadOutlined, DownOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import 'dayjs/locale/zh-cn';
 
@@ -267,17 +267,17 @@ function App() {
     {
       key: 'CNY',
       label: '🇨🇳 人民币 (CNY)',
-      children: renderContent(currentData, totalAmount, pieData, memberData, columns, activeCurrency, isMobile, yearlyTotalUSD, currentYear),
+      children: renderContent(currentData, totalAmount, pieData, memberData, columns, activeCurrency, isMobile, yearlyTotalUSD, currentYear, selectedMonth),
     },
     {
       key: 'HKD',
       label: '🇭🇰 港币 (HKD)',
-      children: renderContent(currentData, totalAmount, pieData, memberData, columns, activeCurrency, isMobile, yearlyTotalUSD, currentYear),
+      children: renderContent(currentData, totalAmount, pieData, memberData, columns, activeCurrency, isMobile, yearlyTotalUSD, currentYear, selectedMonth),
     },
     {
       key: 'USDT',
       label: '🇺🇸 泰达币 (USDT)',
-      children: renderContent(currentData, totalAmount, pieData, memberData, columns, activeCurrency, isMobile, yearlyTotalUSD, currentYear),
+      children: renderContent(currentData, totalAmount, pieData, memberData, columns, activeCurrency, isMobile, yearlyTotalUSD, currentYear, selectedMonth),
     },
   ];
 
@@ -338,9 +338,33 @@ function App() {
   );
 }
 
-function renderContent(data, totalAmount, pieData, memberData, columns, currency, isMobile, yearlyTotalUSD, currentYear) {
+function renderContent(data, totalAmount, pieData, memberData, columns, currency, isMobile, yearlyTotalUSD, currentYear, selectedMonth) {
   const currencySymbol = currency === 'CNY' ? '¥' : (currency === 'HKD' ? 'HK$' : '₮');
   const colorMap = CATEGORY_COLORS[currency] || CATEGORY_COLORS.CNY;
+
+  const handleExport = (type) => {
+    let url = `${API_URL}/export-csv/?currency=${currency}`;
+    if (type === 'month') {
+        const year = selectedMonth.year();
+        const month = selectedMonth.month() + 1;
+        url += `&year=${year}&month=${month}`;
+    }
+    // If type is 'all', we just use currency filter
+    window.open(url, '_blank');
+  };
+
+  const exportItems = [
+    {
+      key: 'month',
+      label: '导出本月明细 (CSV)',
+      onClick: () => handleExport('month'),
+    },
+    {
+      key: 'all',
+      label: '导出全部明细 (CSV)',
+      onClick: () => handleExport('all'),
+    },
+  ];
 
   return (
     <div className={isMobile ? "space-y-4" : "space-y-6"}>
@@ -444,7 +468,17 @@ function renderContent(data, totalAmount, pieData, memberData, columns, currency
         </Col>
       </Row>
 
-      <Card title="📜 完整收支明细" className="shadow-sm">
+      <Card 
+        title="📜 完整收支明细" 
+        className="shadow-sm"
+        extra={
+          <Dropdown menu={{ items: exportItems }} placement="bottomRight">
+            <Button icon={<DownloadOutlined />}>
+              导出 <DownOutlined />
+            </Button>
+          </Dropdown>
+        }
+      >
         <Table 
           dataSource={data} 
           columns={columns} 

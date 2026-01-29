@@ -1,14 +1,18 @@
 from fastapi import FastAPI, Depends, HTTPException, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from sqlalchemy import inspect, text
-from typing import List
+from typing import List, Optional
 from contextlib import asynccontextmanager
 import asyncio
 import os
 import shutil
 import uuid
+import csv
+import io
+from datetime import datetime
 
 from . import models, schemas, database
 from .database import engine, get_db
@@ -136,6 +140,87 @@ async def upload_receipt(transaction_id: int, file: UploadFile = File(...), db: 
     db.refresh(transaction)
     
     return {"filename": filename, "file_path": relative_path}
+
+@app.get("/export-csv/")
+def export_csv(currency: Optional[str] = None, year: Optional[str] = None, month: Optional[str] = None, db: Session = Depends(get_db)):
+    """
+    Export transactions as CSV.
+    Optional filters:
+    - currency: CNY, HKD, USDT
+    - year: YYYY
+    - month: MM (requires year)
+    """
+    query = db.query(models.Transaction).order_by(models.Transaction.created_at.desc())
+    
+    if currency:
+        query = query.filter(models.Transaction.currency == currency)
+    
+    if year:
+        # SQLite uses strftime, Postgres uses extract or date_part
+        # For compatibility and simplicity, we filter in python or use simple string matching if created_at is string
+        # Assuming created_at is DateTime object in SQLAlchemy
+        
+        # Using SQLAlchemy extract for portability (works on both generally)
+        from sqlalchemy import extract
+        query = query.filter(extract('year', models.Transaction.created_at) == int(year))
+        
+        if month:
+            query = query.filter(extract('month', models.Transaction.created_at) == int(month))
+
+    transactions = query.all()
+
+    # Create CSV in memory
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # Write header
+    writer.writerow(['ID', '时间', '记账人', '金额', '币种', '类别', '项目', '备注', '票据路径'])
+    
+    # Write data
+    for t in transactions:
+        # Convert UTC to Beijing Time for export (add 8 hours)
+        # created_at is naive datetime in UTC usually, or timezone aware
+        # Assuming it's naive UTC stored in DB
+        
+        # Simple adjustment: just add 8 hours to the object if it exists
+        beijing_time = ""
+        if t.created_at:
+             # If it's naive, assume UTC. If aware, convert.
+             # Simplified: just format it. The frontend handles display, here we output raw or adjusted?
+             # User asked for "download to local", usually prefers Beijing time.
+             # Let's do a safe string format.
+             dt = t.created_at
+             # dt is datetime object
+             import datetime as dt_module
+             beijing_dt = dt + dt_module.timedelta(hours=8)
+             beijing_time = beijing_dt.strftime('%Y-%m-%d %H:%M:%S')
+
+        writer.writerow([
+            t.id,
+            beijing_time,
+            t.user_name,
+            t.amount,
+            t.currency,
+            t.category,
+            t.item,
+            t.raw_text,
+            t.receipt_image_path or ""
+        ])
+    
+    output.seek(0)
+    
+    # Filename
+    filename_parts = ["transactions"]
+    if currency: filename_parts.append(currency)
+    if year: filename_parts.append(year)
+    if month: filename_parts.append(month)
+    filename = "_".join(filename_parts) + ".csv"
+    
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
 
 @app.delete("/transactions/reset")
 def reset_transactions(db: Session = Depends(get_db)):
