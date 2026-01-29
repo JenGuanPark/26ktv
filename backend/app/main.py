@@ -95,8 +95,35 @@ def read_root():
     return {"message": "Family Ledger API is running"}
 
 @app.get("/transactions/", response_model=List[schemas.Transaction])
-def read_transactions(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    transactions = db.query(models.Transaction).order_by(models.Transaction.created_at.desc()).offset(skip).limit(limit).all()
+def read_transactions(
+    skip: int = 0, 
+    limit: int = 100, 
+    user_name: Optional[str] = None,
+    currency: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    query = db.query(models.Transaction)
+    
+    if user_name:
+        # Case-insensitive partial match could be useful, but exact match is safer for API
+        query = query.filter(models.Transaction.user_name == user_name)
+        
+    if currency:
+        query = query.filter(models.Transaction.currency == currency)
+        
+    transactions = query.order_by(models.Transaction.created_at.desc()).offset(skip).limit(limit).all()
+    return transactions
+
+@app.get("/members/{user_name}/transactions", response_model=List[schemas.Transaction])
+def read_member_transactions(user_name: str, db: Session = Depends(get_db)):
+    """
+    Get all transactions for a specific member (limit 10000).
+    """
+    transactions = db.query(models.Transaction)\
+        .filter(models.Transaction.user_name == user_name)\
+        .order_by(models.Transaction.created_at.desc())\
+        .limit(10000)\
+        .all()
     return transactions
 
 @app.post("/transactions/", response_model=schemas.Transaction)
@@ -142,18 +169,28 @@ async def upload_receipt(transaction_id: int, file: UploadFile = File(...), db: 
     return {"filename": filename, "file_path": relative_path}
 
 @app.get("/export-csv/")
-def export_csv(currency: Optional[str] = None, year: Optional[str] = None, month: Optional[str] = None, db: Session = Depends(get_db)):
+def export_csv(
+    currency: Optional[str] = None, 
+    year: Optional[str] = None, 
+    month: Optional[str] = None, 
+    user_name: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
     """
     Export transactions as CSV.
     Optional filters:
     - currency: CNY, HKD, USDT
     - year: YYYY
     - month: MM (requires year)
+    - user_name: Member name (e.g. luca, JenGuan)
     """
     query = db.query(models.Transaction).order_by(models.Transaction.created_at.desc())
     
     if currency:
         query = query.filter(models.Transaction.currency == currency)
+    
+    if user_name:
+        query = query.filter(models.Transaction.user_name == user_name)
     
     if year:
         # SQLite uses strftime, Postgres uses extract or date_part
