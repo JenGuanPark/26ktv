@@ -97,7 +97,11 @@ function App() {
       setError(null);
       
       // Add timeout to force error if backend hangs
-      const res = await axios.get(`${API_URL}/transactions/`, { timeout: 15000 });
+      // 拉取全部记录（后端默认 limit=100，会截断旧数据导致部分币种/月份显示为空）
+      const res = await axios.get(`${API_URL}/transactions/`, {
+        params: { limit: 100000 },
+        timeout: 15000,
+      });
       
       console.log("Fetch success:", res.data);
       setTransactions(res.data || []);
