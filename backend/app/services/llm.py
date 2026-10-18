@@ -14,15 +14,22 @@ API_KEY = os.getenv("DASHSCOPE_API_KEY") or os.getenv("OPENAI_API_KEY")
 # 自动判断 Base URL 和 Model
 if os.getenv("DASHSCOPE_API_KEY"):
     # 阿里云配置
-    BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    VISION_MODEL = "qwen-vl-max" # 通义千问视觉增强版
-    TEXT_MODEL = "qwen-plus"     # 通义千问增强版
+    BASE_URL = os.getenv("DASHSCOPE_BASE_URL") or "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    VISION_MODELS = []
+    for model_name in [
+        os.getenv("VISION_MODEL"),
+        "qwen3-vl-plus",
+        "qwen-vl-max",
+    ]:
+        if model_name and model_name not in VISION_MODELS:
+            VISION_MODELS.append(model_name)
+    TEXT_MODEL = os.getenv("TEXT_MODEL") or "qwen-plus"
     print("Using DashScope (Aliyun) models...")
 else:
     # OpenAI 默认配置
     BASE_URL = os.getenv("OPENAI_BASE_URL") 
-    VISION_MODEL = "gpt-4o" 
-    TEXT_MODEL = "gpt-4o-mini"
+    VISION_MODELS = [os.getenv("VISION_MODEL") or "gpt-4o"]
+    TEXT_MODEL = os.getenv("TEXT_MODEL") or "gpt-4o-mini"
 
 client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
 
@@ -171,44 +178,56 @@ def parse_expense_image(image_path: str):
     if not API_KEY:
         return {"is_expense": False, "error": "No API Key configured"}
 
-    print(f"Analyzing image with {VISION_MODEL}: {image_path}")
+    print(f"Analyzing image with {VISION_MODELS[0]}: {image_path}")
     
     try:
         base64_image = encode_image(image_path)
-        
-        response = client.chat.completions.create(
-            model=VISION_MODEL,
-            messages=[
-                {
-                    "role": "system",
-                    "content": SYSTEM_PROMPT
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": "这是我的消费小票，请识别其中的金额、币种、类别和商品名称。"},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{base64_image}",
-                                "detail": "high"
-                            }
-                        }
-                    ]
-                }
-            ],
-            response_format={ "type": "json_object" },
-            max_tokens=300
-        )
+        last_error = None
 
-        content = response.choices[0].message.content
-        parsed = json.loads(content)
-        
-        if not parsed.get("is_expense", True):
-            return {"is_expense": False, "error": "AI recognized this is not an expense receipt."}
-        
-        parsed["is_expense"] = True
-        return parsed
+        for vision_model in VISION_MODELS:
+            try:
+                response = client.chat.completions.create(
+                    model=vision_model,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": IMAGE_SYSTEM_PROMPT
+                        },
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": "这是我的消费小票，请识别其中的总金额、币种和类别。"},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:image/jpeg;base64,{base64_image}",
+                                        "detail": "high"
+                                    }
+                                }
+                            ]
+                        }
+                    ],
+                    response_format={ "type": "json_object" },
+                    max_tokens=300
+                )
+
+                content = response.choices[0].message.content
+                parsed = json.loads(content)
+
+                if not parsed.get("is_expense", True):
+                    return {"is_expense": False, "error": "AI recognized this is not an expense receipt."}
+
+                parsed["is_expense"] = True
+                return parsed
+            except Exception as model_error:
+                last_error = model_error
+                error_text = str(model_error)
+                print(f"LLM Image Error with model {vision_model}: {error_text}")
+                if "model_not_found" not in error_text and "Model not exist" not in error_text:
+                    break
+
+        if last_error:
+            raise last_error
     except Exception as e:
         print(f"LLM Image Error: {e}")
         return {"is_expense": False, "error": str(e)}
