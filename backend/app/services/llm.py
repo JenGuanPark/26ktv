@@ -10,19 +10,34 @@ load_dotenv()
 # Configuration
 # 优先检查 DASHSCOPE_API_KEY (阿里云)，其次是 OPENAI_API_KEY
 API_KEY = os.getenv("DASHSCOPE_API_KEY") or os.getenv("OPENAI_API_KEY")
+USE_DASHSCOPE = bool(os.getenv("DASHSCOPE_API_KEY"))
+
+# 2026-10-10 起这些主线模型已下线，继续调用会返回 Model not exist
+RETIRED_MODELS = {
+    "qwen-vl-max",
+    "qwen-vl-plus",
+    "qwen-turbo",
+    "qwq-plus",
+    "qvq-max",
+}
+
+def _unique_models(names):
+    models = []
+    for name in names:
+        if name and name not in RETIRED_MODELS and name not in models:
+            models.append(name)
+    return models
 
 # 自动判断 Base URL 和 Model
-if os.getenv("DASHSCOPE_API_KEY"):
-    # 阿里云配置
+if USE_DASHSCOPE:
+    # 阿里云配置。qwen3-vl-plus 仍提供视觉理解；其后为当前 Qwen3.6/3.7 视觉模型。
     BASE_URL = os.getenv("DASHSCOPE_BASE_URL") or "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    VISION_MODELS = []
-    for model_name in [
+    VISION_MODELS = _unique_models([
         os.getenv("VISION_MODEL"),
         "qwen3-vl-plus",
-        "qwen-vl-max",
-    ]:
-        if model_name and model_name not in VISION_MODELS:
-            VISION_MODELS.append(model_name)
+        "qwen3.7-flash",
+        "qwen3.6-flash",
+    ])
     TEXT_MODEL = os.getenv("TEXT_MODEL") or "qwen-plus"
     print("Using DashScope (Aliyun) models...")
 else:
@@ -186,9 +201,9 @@ def parse_expense_image(image_path: str):
 
         for vision_model in VISION_MODELS:
             try:
-                response = client.chat.completions.create(
-                    model=vision_model,
-                    messages=[
+                request_kwargs = {
+                    "model": vision_model,
+                    "messages": [
                         {
                             "role": "system",
                             "content": IMAGE_SYSTEM_PROMPT
@@ -207,9 +222,13 @@ def parse_expense_image(image_path: str):
                             ]
                         }
                     ],
-                    response_format={ "type": "json_object" },
-                    max_tokens=300
-                )
+                    "response_format": { "type": "json_object" },
+                    "max_tokens": 300,
+                }
+                # 新视觉模型默认会思考，思考内容会占满 max_tokens，导致 JSON 为空
+                if USE_DASHSCOPE:
+                    request_kwargs["extra_body"] = {"enable_thinking": False}
+                response = client.chat.completions.create(**request_kwargs)
 
                 content = response.choices[0].message.content
                 parsed = json.loads(content)
